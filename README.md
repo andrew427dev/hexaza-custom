@@ -22,7 +22,7 @@ python3 -m venv .venv
 
 `dist/`에 `local.hexaza.custom.streamDeckIconPack`, `preview.png`, `SHA256SUMS.txt`가 생성됩니다. 여섯 아이콘의 이름·파일·144×144 PNG 형식, 미리보기와 원본의 일치, 태그와 manifest 버전, 패키지 내부 파일을 검사합니다. 원본 아이콘의 바이트를 그대로 패키지에 넣습니다.
 
-아이콘을 갱신할 때는 원본 PNG와 `icons.json`을 함께 수정하고 `manifest.json`의 버전을 올린 뒤, 다음 명령으로 미리보기를 갱신해 주세요. 미리보기는 `icons.json` 순서대로 같은 PNG를 배치하고 Pillow 내장 글꼴을 사용하므로 별도 운영체제 글꼴이 필요하지 않습니다.
+아이콘을 갱신할 때는 원본 PNG와 `icons.json`을 함께 수정하고 `manifest.json`의 버전을 올린 뒤, 다음 명령으로 미리보기를 갱신해 주세요. 미리보기는 `icons.json` 순서대로 같은 PNG를 배치하고 Pillow 내장 비트맵 글꼴을 사용하므로 운영체제 글꼴이나 FreeType 렌더링 차이에 영향을 받지 않습니다. 생성된 미리보기는 저장된 이미지와 픽셀 단위로 비교하고, 배포 파일에는 검증된 `docs/preview.png`의 원본 바이트를 넣습니다. 아이콘 팩은 무압축 ZIP과 고정된 파일 메타데이터를 사용해 플랫폼마다 압축 결과가 달라지는 것을 방지합니다.
 
 ```sh
 .venv/bin/python scripts/build.py --update-preview

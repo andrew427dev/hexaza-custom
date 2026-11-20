@@ -51,16 +51,18 @@ def check_sources(tag=None):
 
 def preview(entries):
     canvas = Image.new("RGB", (704, 426), "#141b20")
-    draw = ImageDraw.Draw(canvas)
-    # Pillow bundles this font, so preview generation is independent of OS fonts.
-    font = ImageFont.load_default(size=21)
+    # This embedded bitmap font uses no FreeType rasterizer or system fonts.
+    font = ImageFont.load_default_imagefont()
     for index, entry in enumerate(entries):
         x, y = 64 + index % 3 * 216, 23 + index // 3 * 202
         with Image.open(PACK / "icons" / entry["path"]) as source:
             icon = source.convert("RGBA")
             canvas.paste(icon, (x, y), icon)
-        draw.text((x + 72, y + 156), entry["name"], font=font,
-                  fill="#e5e9ed", anchor="mt")
+        left, top, right, bottom = font.getbbox(entry["name"])
+        label = Image.new("L", (right - left, bottom - top))
+        ImageDraw.Draw(label).text((-left, -top), entry["name"], font=font, fill=255)
+        label = label.resize((label.width * 2, label.height * 2), Image.Resampling.NEAREST)
+        canvas.paste("#e5e9ed", (x + 72 - label.width // 2, y + 156), label)
     encoded = io.BytesIO()
     canvas.save(encoded, format="PNG", optimize=False)
     return encoded.getvalue()
@@ -69,10 +71,10 @@ def preview(entries):
 def package(destination):
     paths = [PACK / "manifest.json", PACK / "icons.json", PACK / "icon.png", PACK / "license.txt"]
     paths.extend((PACK / "icons").glob("*.png"))
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_STORED) as archive:
         for path in sorted(paths):
             info = zipfile.ZipInfo(path.relative_to(ROOT).as_posix(), date_time=(2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_STORED
             info.create_system = 3
             info.external_attr = 0o100644 << 16
             archive.writestr(info, path.read_bytes())
@@ -95,12 +97,16 @@ def main():
     documented = ROOT / "docs" / "preview.png"
     if args.update_preview:
         documented.write_bytes(image)
-    if documented.read_bytes() != image:
-        raise ValueError("미리보기가 원본과 다릅니다. --update-preview로 갱신해 주세요")
+    documented_bytes = documented.read_bytes()
+    # PNG encoders may emit different compressed bytes for identical pixels.
+    # Validate the image, then distribute the exact reviewed repository asset.
+    with Image.open(io.BytesIO(documented_bytes)) as saved, Image.open(io.BytesIO(image)) as generated:
+        if saved.size != generated.size or saved.convert("RGBA").tobytes() != generated.convert("RGBA").tobytes():
+            raise ValueError("미리보기가 원본과 다릅니다. --update-preview로 갱신해 주세요")
     args.output.mkdir(parents=True, exist_ok=True)
     archive = args.output / "local.hexaza.custom.streamDeckIconPack"
     package(archive)
-    (args.output / "preview.png").write_bytes(image)
+    (args.output / "preview.png").write_bytes(documented_bytes)
     checksums = []
     for path in [archive, args.output / "preview.png"]:
         checksums.append(hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name)
