@@ -1,0 +1,64 @@
+name: 아이콘 팩 검증
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m unittest discover -s scripts -p test_build.py
+      - name: 원본 아이콘과 미리보기 검사 및 패키징
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            python scripts/build.py --tag "$GITHUB_REF_NAME"
+          else
+            python scripts/build.py
+          fi
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hexaza-custom
+          path: dist/
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: hexaza-custom
+          path: dist
+      - run: cd dist && sha256sum --check SHA256SUMS.txt
+      - name: 미리보기와 통합 아이콘 팩 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release download "$GITHUB_REF_NAME" --dir existing-release
+            cmp dist/local.hexaza.custom.streamDeckIconPack existing-release/local.hexaza.custom.streamDeckIconPack
+            cmp dist/preview.png existing-release/preview.png
+            cmp dist/SHA256SUMS.txt existing-release/SHA256SUMS.txt
+          else
+            python - <<'PY'
+          import os
+          from pathlib import Path
+          repository, tag = os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_REF_NAME']
+          image = f'https://github.com/{repository}/releases/download/{tag}/preview.png'
+          Path('release-notes.md').write_text(f'![여섯 아이콘 미리보기]({image})\n\n통합팩을 열면 Stream Deck 아이콘 라이브러리에 Hexaza Custom이 추가됩니다.\n')
+          PY
+            gh release create "$GITHUB_REF_NAME" dist/local.hexaza.custom.streamDeckIconPack dist/preview.png dist/SHA256SUMS.txt --verify-tag --title "Hexaza Custom $GITHUB_REF_NAME" --notes-file release-notes.md
+          fi
